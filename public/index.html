@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VAAH Ground & Clearance Delivery - AWS Cloud System</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    :root {
+      --bg-dark: #0e1318;
+      --panel-bg: #151b22;
+      --card-bg: #1b222c;
+      --border: #2a3442;
+      --text-main: #e5ecf4;
+      --text-muted: #8b99af;
+      --blue: #2f71e8;
+      --blue-border: #3b82f6;
+      --green: #1f7a4c;
+      --green-bright: #34d399;
+      --amber: #92611b;
+      --amber-bright: #fbbf24;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
+    body { background: var(--bg-dark); color: var(--text-main); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+    /* Top Header matching VAAH image */
+    .top-header {
+      height: 62px; background: #12171d; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between; padding: 0 18px;
+    }
+    .brand-group { display: flex; align-items: center; gap: 12px; }
+    .brand-title { font-size: 13px; font-weight: 700; letter-spacing: 0.4px; color: #fff; }
+    .brand-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+    .telemetry-group { display: flex; align-items: center; gap: 20px; }
+    .lab-badge {
+      background: #1d251e; border: 1px solid #3c6e47; border-radius: 6px; padding: 4px 10px;
+      font-size: 11px; color: #8ce99a; text-align: center;
+    }
+    .lab-badge span { display: block; color: #d3f9d8; font-weight: 600; font-size: 10px; }
+    .metric { font-size: 11px; color: var(--text-muted); }
+    .metric strong { display: block; font-size: 13px; color: #fff; font-family: monospace; margin-top: 2px; }
+
+    .cicd-pill {
+      background: #132a20; border: 1px solid #2b6cb0; border-color: #2f855a;
+      color: #68d391; padding: 6px 12px; border-radius: 6px; font-size: 11px; font-weight: 600;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .dot-green { width: 8px; height: 8px; background: #48bb78; border-radius: 50%; display: inline-block; }
+
+    .mode-switcher { display: flex; gap: 8px; }
+    .btn-mode {
+      background: #232d3b; color: #fff; border: 1px solid #3b4859; padding: 6px 11px;
+      border-radius: 5px; font-size: 11px; cursor: pointer; font-weight: 600;
+    }
+    .btn-mode.active { background: var(--blue); border-color: var(--blue-border); }
+    .btn-mode.spawn { background: #234e37; border-color: #34d399; color: #d1fae5; }
+
+    /* Main 3-Column Layout */
+    .workspace { display: grid; grid-template-columns: 215px 1fr 340px; flex: 1; overflow: hidden; }
+
+    /* Left Sidebar */
+    .sidebar {
+      background: #12171d; border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; justify-content: space-between; padding: 14px 10px;
+    }
+    .nav-list { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+    .nav-item {
+      padding: 10px 12px; border-radius: 6px; font-size: 13px; color: var(--text-muted);
+      cursor: pointer; transition: 0.15s; border-left: 3px solid transparent;
+    }
+    .nav-item:hover { background: #1a222c; color: #fff; }
+    .nav-item.active {
+      background: linear-gradient(90deg, #162c28 0%, #161e27 100%);
+      color: #fff; border-left-color: var(--green-bright); font-weight: 600;
+    }
+    .vpc-footer {
+      padding: 10px 12px; border-top: 1px solid var(--border); font-size: 12px;
+      color: var(--text-muted); display: flex; align-items: center; justify-content: space-between;
+    }
+
+    /* Center Pipeline Area */
+    .center-pane { padding: 18px; overflow-y: auto; position: relative; }
+    .pane-title { font-size: 15px; font-weight: 600; margin-bottom: 14px; color: #fff; }
+
+    .strip-card {
+      background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px;
+      padding: 14px 16px; margin-bottom: 12px; transition: 0.2s;
+    }
+    .strip-card.status-REQUESTED { border-color: #2b6cb0; background: linear-gradient(180deg, #162232 0%, #171f2a 100%); }
+    .strip-card.status-CLEARED { border-color: #2f855a; background: linear-gradient(180deg, #132820 0%, #15201b 100%); }
+    .strip-card.status-PENDING { border-color: #975a16; background: linear-gradient(180deg, #282015 0%, #1f1b16 100%); }
+
+    .strip-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .strip-id { font-size: 14px; font-weight: 700; color: #fff; display: flex; gap: 10px; align-items: center; }
+    .strip-id span.meta { font-weight: 400; color: #cbd5e1; font-size: 13px; }
+
+    .badge {
+      padding: 3px 10px; border-radius: 12px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px;
+    }
+    .badge.REQUESTED { background: #1e3a5f; color: #63b3ed; border: 1px solid #3182ce; }
+    .badge.CLEARED { background: #183d2c; color: #68d391; border: 1px solid #38a169; }
+    .badge.PENDING { background: #432c14; color: #f6ad55; border: 1px solid #dd6b20; }
+
+    .strip-actions { display: flex; justify-content: space-between; align-items: center; }
+    .pill-group { display: flex; align-items: center; gap: 8px; }
+    .pill-highlight {
+      background: #3b3019; border: 1px solid #b7791f; color: #fbd38d;
+      font-size: 11px; padding: 4px 10px; border-radius: 5px;
+    }
+    .pill-sub {
+      background: #252f3d; color: #a0aec0; font-size: 11px; padding: 4px 10px; border-radius: 5px;
+    }
+    .btn-group { display: flex; gap: 8px; }
+    .btn {
+      padding: 6px 13px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; border: 1px solid transparent;
+    }
+    .btn-blue { background: #1e3a6d; border-color: #3b82f6; color: #dbeafe; }
+    .btn-blue:hover { background: #254b8c; }
+    .btn-green { background: #1b4d36; border-color: #34d399; color: #d1fae5; }
+    .btn-green:hover { background: #236346; }
+
+    /* Table below strips matching image */
+    .strip-table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 12px; }
+    .strip-table th { text-align: left; padding: 8px 10px; color: var(--text-muted); border-bottom: 1px solid var(--border); }
+    .strip-table td { padding: 10px; border-bottom: 1px solid #1f2833; color: #cbd5e1; }
+
+    /* Clearance Editor Floating Modal matching center-right overlay */
+    .modal-overlay {
+      position: fixed; top: 54%; left: 53%; transform: translate(-50%, -50%);
+      width: 390px; background: #1c232d; border: 1px solid #3c495c; border-radius: 10px;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.75); padding: 18px; z-index: 100; display: none;
+    }
+    .modal-overlay.open { display: block; }
+    .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+    .modal-header h3 { font-size: 15px; color: #fff; }
+    .close-btn { background: none; border: none; color: var(--text-muted); font-size: 16px; cursor: pointer; }
+    .form-group { margin-bottom: 12px; }
+    .form-group label { display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 5px; }
+    .form-control {
+      width: 100%; padding: 8px 10px; background: #11161d; border: 1px solid #2e3948;
+      border-radius: 6px; color: #fff; font-size: 13px;
+    }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+    .modal-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+    /* Right S3 Chart Panel */
+    .right-pane {
+      background: #141a21; border-left: 1px solid var(--border); padding: 16px;
+      display: flex; flex-direction: column;
+    }
+    .s3-header {
+      background: #1b232e; border: 1px solid var(--border); padding: 8px 12px;
+      border-radius: 6px; font-size: 11px; color: #cbd5e1; display: flex;
+      justify-content: space-between; align-items: center; margin-bottom: 10px; font-family: monospace;
+    }
+    .chart-canvas {
+      background: #f8fafc; color: #0f172a; flex: 1; border-radius: 6px; padding: 12px;
+      position: relative; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between;
+    }
+    .chart-zoom-controls {
+      position: absolute; right: 10px; bottom: 45px; display: flex; flex-direction: column; gap: 4px;
+    }
+    .zoom-btn {
+      width: 28px; height: 28px; background: #1e293b; color: #fff; border: 1px solid #475569;
+      border-radius: 4px; cursor: pointer; font-weight: 700;
+    }
+
+    /* Pilot Mode View */
+    .pilot-container {
+      max-width: 780px; margin: 24px auto; background: #151c24; border: 1px solid var(--border);
+      border-radius: 10px; padding: 24px; width: 95%;
+    }
+    .dcl-screen {
+      background: #08120c; border: 2px solid #276749; border-radius: 8px; padding: 16px;
+      font-family: monospace; color: #68d391; margin-top: 18px; min-height: 130px;
+    }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+
+  <!-- Top Telemetry Bar matching Reference Image -->
+  <header class="top-header">
+    <div class="brand-group">
+      <div>
+        <div class="brand-title">SARDAR VALLABHBHAI PATEL INTL (VAAH) - GROUND & CLEARANCE</div>
+        <div class="brand-sub">Air Traffic Clearance System</div>
+      </div>
+    </div>
+
+    <div class="telemetry-group">
+      <div class="lab-badge">
+        Learner Lab Connected
+        <span>Lab Est: $0.12 / $50.00</span>
+      </div>
+      <div class="metric">UTC<strong id="utc-clock">14:35:20</strong></div>
+      <div class="metric">ATIS<strong>126.80 MHz</strong></div>
+      <div class="metric">DEP<strong>RWY 23</strong></div>
+      <div class="cicd-pill">
+        CI/CD Deployment: v1.4.2 [PASS] <span class="dot-green"></span>
+      </div>
+    </div>
+
+    <div class="mode-switcher">
+      <button class="btn-mode active" id="btn-controller-mode" onclick="switchRole('controller')">ATC Controller View</button>
+      <button class="btn-mode" id="btn-pilot-mode" onclick="switchRole('pilot')">Pilot Cockpit View</button>
+      <button class="btn-mode spawn" onclick="window.open(window.location.pathname + '?role=pilot', '_blank', 'width=850,height=720')">+ Open New Pilot Window</button>
+    </div>
+  </header>
+
+  <!-- CONTROLLER WORKSPACE -->
+  <div class="workspace" id="controller-workspace">
+    <!-- Left Sidebar -->
+    <aside class="sidebar">
+      <ul class="nav-list">
+        <li class="nav-item active" onclick="switchTab('strips', this)">Active Flight Strips</li>
+        <li class="nav-item" onclick="switchTab('charts', this)">VAAH S3 Charts</li>
+        <li class="nav-item" onclick="switchTab('submissions', this)">Flight Plan Submissions</li>
+        <li class="nav-item" onclick="switchTab('logs', this)">System & Cloud Logs</li>
+        <li class="nav-item" onclick="switchTab('sla', this)">SLA Monitors</li>
+      </ul>
+      <div class="vpc-footer">
+        <span><span class="dot-green"></span> AWS Active - VPC</span>
+        <span>•••</span>
+      </div>
+    </aside>
+
+    <!-- Center Dynamic Panel -->
+    <main class="center-pane">
+      <!-- TAB 1: Active Flight Strips -->
+      <div id="tab-strips">
+        <div class="pane-title">Active Flight Strips & Clearance Pipeline</div>
+        <div id="flight-strips-list"></div>
+
+        <table class="strip-table">
+          <thead>
+            <tr>
+              <th>Callsign</th>
+              <th>Aircraft</th>
+              <th>Destination</th>
+              <th>Assigned SID</th>
+              <th>Altitude</th>
+              <th>Squawk</th>
+              <th>Pushback</th>
+            </tr>
+          </thead>
+          <tbody id="flight-table-body"></tbody>
+        </table>
+      </div>
+
+      <!-- TAB 2: VAAH S3 Charts List -->
+      <div id="tab-charts" class="hidden">
+        <div class="pane-title">Amazon S3 Bucket (`vaah-terminal-charts`) Repository</div>
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:14px;">
+          Objects retrieved via IAM <code>LabRole</code> from Amazon S3 (`us-east-1`). Click any procedure chart to load it in the right-hand S3 Chart Viewer.
+        </p>
+        <div id="s3-chart-cards"></div>
+      </div>
+
+      <!-- TAB 3: Quick Flight Plan Submission (Controller Manual Entry) -->
+      <div id="tab-submissions" class="hidden">
+        <div class="pane-title">Manual Flight Plan Submission (ATC / FIC Injection)</div>
+        <div class="strip-card">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Aircraft Callsign</label>
+              <input id="manual-callsign" class="form-control" value="VTI704" />
+            </div>
+            <div class="form-group">
+              <label>Aircraft Type</label>
+              <input id="manual-acft" class="form-control" value="A320" />
+            </div>
+            <div class="form-group">
+              <label>Destination ICAO</label>
+              <input id="manual-dest" class="form-control" value="VABB" />
+            </div>
+          </div>
+          <button class="btn btn-green" onclick="submitManualFPL()">Inject Flight Strip to RDS & Pipeline</button>
+        </div>
+      </div>
+
+      <!-- TAB 4: System & Cloud Logs -->
+      <div id="tab-logs" class="hidden">
+        <div class="pane-title">AWS CloudTrail, RDS KMS & EBS Audit Logs (`/mnt/atc-logs`)</div>
+        <div id="cloud-logs-box" style="font-family:monospace;font-size:12px;background:#0b0f14;padding:14px;border-radius:8px;border:1px solid var(--border);max-height:460px;overflow-y:auto;"></div>
+      </div>
+
+      <!-- TAB 5: SLA Monitors -->
+      <div id="tab-sla" class="hidden">
+        <div class="pane-title">Cloud Service Level Agreement (SLA) & Cost Telemetry</div>
+        <div class="strip-card status-CLEARED">
+          <div class="strip-id">Availability Target: 99.9% (Application Load Balancer + Auto Scaling Group)</div>
+          <p style="font-size:12px;color:#cbd5e1;margin-top:8px;">
+            • <strong>Compute Layer:</strong> EC2 Auto Scaling (`t3.micro`) across public VPC subnets.<br/>
+            • <strong>Database Layer:</strong> Single-AZ RDS MySQL encrypted with AWS KMS (`us-east-1`).<br/>
+            • <strong>RPO / RTO Compliance:</strong> Daily automated EBS snapshots (`Practical 4`) guarantee RPO &lt; 24 hours and RTO &lt; 15 minutes.<br/>
+            • <strong>Budget Protection Guardrail:</strong> EventBridge rule triggers Lambda stop-instance function outside operational hours (`$0.12 / $50.00` used).
+          </p>
+        </div>
+      </div>
+
+      <!-- Floating Clearance Editor Modal matching Reference Image -->
+      <div class="modal-overlay" id="clearance-modal">
+        <div class="modal-header">
+          <h3>Clearance Editor</h3>
+          <button class="close-btn" onclick="closeClearanceModal()">✕</button>
+        </div>
+        <div class="form-group">
+          <label>Callsign / Destination</label>
+          <input type="text" id="edit-callsign-display" class="form-control" readonly />
+          <input type="hidden" id="edit-callsign" />
+        </div>
+        <div class="form-group">
+          <label>Departure Route (SID)</label>
+          <select id="edit-sid" class="form-control" onchange="updateChartFromSID(this.value)">
+            <option value="BODAR 1A">BODAR 1A</option>
+            <option value="BODAR 1B">BODAR 1B</option>
+            <option value="LIGPI 1A">LIGPI 1A</option>
+            <option value="SASRO 1A">SASRO 1A</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <div>
+            <label style="font-size:11px;color:var(--text-muted);">Altitude</label>
+            <input type="text" id="edit-alt" class="form-control" value="FL120" />
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--text-muted);">Squawk</label>
+            <input type="text" id="edit-squawk" class="form-control" value="3412" />
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--text-muted);">Departure</label>
+            <input type="text" id="edit-dep" class="form-control" value="DEPA 1A" />
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-blue" onclick="transmitClearance('CLEARED')">Transmit Clearance</button>
+          <button class="btn btn-green" onclick="transmitClearance('CLEARED')">Approve</button>
+        </div>
+      </div>
+    </main>
+
+    <!-- Right S3 Airport Chart Viewer matching Reference Image -->
+    <aside class="right-pane">
+      <div class="pane-title">S3 Airport Chart Viewer</div>
+      <div class="s3-header">
+        <span>S3 BUCKET: <strong id="bucket-label">vaah-terminal-charts</strong></span>
+        <span style="background:#b91c1c;color:#fff;padding:2px 6px;border-radius:4px;font-weight:700;">S3</span>
+      </div>
+
+      <div class="chart-canvas" id="chart-container">
+        <div style="display:flex;justify-content:space-between;border-bottom:2px solid #0f172a;padding-bottom:6px;font-size:11px;font-weight:700;">
+          <span>VAAH / AMD</span>
+          <span id="chart-proc-name">BODAR 1A</span>
+          <span>AHMEDABAD, INDIA</span>
+        </div>
+
+        <!-- Dynamic SVG Aeronautical Chart matching VAAH RWY 05/23 & BODAR 1A -->
+        <svg id="vaah-svg" viewBox="0 0 260 320" style="width:100%;height:100%;transition:transform 0.2s;">
+          <rect width="260" height="320" fill="#f8fafc"/>
+          <!-- Lat/Lon grid lines -->
+          <line x1="0" y1="120" x2="260" y2="120" stroke="#cbd5e1" stroke-dasharray="3,3"/>
+          <line x1="0" y1="220" x2="260" y2="220" stroke="#cbd5e1" stroke-dasharray="3,3"/>
+          <text x="8" y="116" font-size="7" fill="#475569">23°05'N</text>
+          <text x="8" y="216" font-size="7" fill="#475569">23°00'N</text>
+
+          <!-- Runway 05/23 Centerline -->
+          <line x1="125" y1="55" x2="125" y2="265" stroke="#0f172a" stroke-width="6"/>
+          <rect x="131" y="130" width="12" height="35" fill="#0f172a"/>
+          <text x="115" y="48" font-size="8" font-weight="bold" fill="#0f172a">RWY 23</text>
+          <text x="115" y="280" font-size="8" font-weight="bold" fill="#0f172a">RWY 05</text>
+
+          <!-- SID Track Vector -->
+          <path d="M 125 180 L 185 85 L 175 180 Z" fill="none" stroke="#0f172a" stroke-width="1.3" stroke-dasharray="4,3"/>
+          <circle cx="185" cy="85" r="4" fill="#2563eb"/>
+          <rect x="140" y="55" width="48" height="22" fill="#fff" stroke="#0f172a" stroke-width="1"/>
+          <text x="145" y="68" font-size="7" font-weight="bold" fill="#0f172a" id="svg-fix-label">BODAR 1A</text>
+          <text x="188" y="170" font-size="7" fill="#0f172a">FL120</text>
+          <text x="188" y="180" font-size="7" font-weight="bold" fill="#0f172a">225°</text>
+        </svg>
+
+        <div class="chart-zoom-controls">
+          <button class="zoom-btn" onclick="zoomChart(1.2)">+</button>
+          <button class="zoom-btn" onclick="zoomChart(1.0)">⟲</button>
+          <button class="zoom-btn" onclick="zoomChart(0.85)">−</button>
+        </div>
+
+        <div style="display:flex;justify-content:space-between;border-top:2px solid #0f172a;padding-top:6px;font-size:10px;font-weight:700;">
+          <span>RUNWAY 05/23</span>
+          <span id="chart-footer-proc">BODAR 1A</span>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- MULTI-PILOT INTERACTIVE COCKPIT VIEW -->
+  <div id="pilot-workspace" class="pilot-container hidden">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <div>
+        <h2 style="font-size:18px;color:#fff;">A320 / B738 Cockpit Datalink (DCL) Terminal — VAAH</h2>
+        <p style="font-size:12px;color:var(--text-muted);">Open multiple browser windows in this mode to simulate multiple aircraft requesting clearance simultaneously.</p>
+      </div>
+      <span class="badge REQUESTED">VAAH DELIVERY 121.90 MHz</span>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label>Aircraft Callsign</label>
+        <input type="text" id="pilot-callsign" class="form-control" value="AIC012" placeholder="e.g., AIC012, 6E451" />
+      </div>
+      <div class="form-group">
+        <label>Aircraft Type</label>
+        <input type="text" id="pilot-aircraft" class="form-control" value="A320" placeholder="A320 / A321 / B738" />
+      </div>
+      <div class="form-group">
+        <label>Route (Dep → Arr ICAO)</label>
+        <input type="text" id="pilot-dest" class="form-control" value="VABB - Mumbai" placeholder="e.g., VABB - Mumbai" />
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label>Requested Initial Altitude</label>
+        <input type="text" id="pilot-alt" class="form-control" value="FL120" />
+      </div>
+      <div class="form-group" style="grid-column: span 2; display:flex; align-items:flex-end; gap:10px;">
+        <button class="btn btn-blue" style="width:100%;padding:10px;" onclick="pilotRequestClearance()">
+          1. Request IFR Clearance (Send to Controller)
+        </button>
+      </div>
+    </div>
+
+    <!-- Live Cockpit MCDU / DCL Scratchpad -->
+    <div class="dcl-screen" id="pilot-dcl-screen">
+      [MCDU DCL READY] ENTER CALLSIGN & ROUTE ABOVE TO REQUEST CLEARANCE FROM VAAH DELIVERY...
+    </div>
+
+    <div style="display:flex;gap:12px;margin-top:16px;">
+      <button class="btn btn-green" onclick="pilotSendAction('WILCO')">2. WILCO / Readback Clearance</button>
+      <button class="btn btn-blue" onclick="pilotSendAction('REQ_PUSHBACK')">3. Request Startup & Pushback</button>
+    </div>
+  </div>
+
+  <script>
+    const socket = io();
+    let currentFlights = [];
+    let currentZoom = 1;
+
+    // Live UTC Clock
+    setInterval(() => {
+      const now = new Date();
+      document.getElementById('utc-clock').textContent = now.toISOString().slice(11, 19);
+    }, 1000);
+
+    // Check URL parameter ?role=pilot or ?role=controller
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('role') === 'pilot') {
+      switchRole('pilot');
+      const randomCallsigns = ['AIC012', '6E451', 'SGE892', 'VTI704', 'AKJ219'];
+      document.getElementById('pilot-callsign').value = randomCallsigns[Math.floor(Math.random() * randomCallsigns.length)];
+    }
+
+    function switchRole(role) {
+      const ctrl = document.getElementById('controller-workspace');
+      const pilot = document.getElementById('pilot-workspace');
+      document.getElementById('btn-controller-mode').classList.toggle('active', role === 'controller');
+      document.getElementById('btn-pilot-mode').classList.toggle('active', role === 'pilot');
+      if (role === 'pilot') {
+        ctrl.classList.add('hidden');
+        pilot.classList.remove('hidden');
+      } else {
+        pilot.classList.add('hidden');
+        ctrl.classList.remove('hidden');
+      }
+    }
+
+    function switchTab(tabId, el) {
+      ['strips', 'charts', 'submissions', 'logs', 'sla'].forEach(t => {
+        document.getElementById('tab-' + t).classList.add('hidden');
+      });
+      document.getElementById('tab-' + tabId).classList.remove('hidden');
+      document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+      if (el) el.classList.add('active');
+    }
+
+    function renderFlights(flights) {
+      currentFlights = flights;
+      const list = document.getElementById('flight-strips-list');
+      const tbody = document.getElementById('flight-table-body');
+      list.innerHTML = '';
+      tbody.innerHTML = '';
+
+      flights.forEach(f => {
+        const statusKey = f.status.includes('CLEARED') ? 'CLEARED' : (f.status.includes('PENDING') ? 'PENDING' : 'REQUESTED');
+        const card = document.createElement('div');
+        card.className = `strip-card status-${statusKey}`;
+        card.innerHTML = `
+          <div class="strip-top">
+            <div class="strip-id">
+              ${f.callsign} <span class="meta">| ${f.aircraft} | ${f.origin} to ${f.destination} | SQUAWK ${f.squawk}</span>
+            </div>
+            <span class="badge ${statusKey}">${f.status}</span>
+          </div>
+          <div class="strip-actions">
+            <div class="pill-group">
+              <span class="pill-highlight">SID: ${f.sid}</span>
+              <span style="color:#64748b;">→</span>
+              <span class="pill-sub">${f.altitude} | Pushback: ${f.pushback}</span>
+            </div>
+            <div class="btn-group">
+              <button class="btn btn-blue" onclick="openClearanceModal('${f.callsign}')">Assign SID</button>
+              <button class="btn btn-green" onclick="approvePushback('${f.callsign}')">
+                ${f.pushback === 'APPROVED' ? 'Pushback Approved ✓' : 'Approve Pushback'}
+              </button>
+            </div>
+          </div>
+        `;
+        list.appendChild(card);
+
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td><strong>${f.callsign}</strong></td>
+          <td>${f.aircraft}</td>
+          <td>${f.origin} to ${f.destination}</td>
+          <td>${f.sid}</td>
+          <td>${f.altitude}</td>
+          <td>${f.squawk}</td>
+          <td>${f.pushback}</td>
+        `;
+        tbody.appendChild(row);
+      });
+
+      // Update Pilot DCL Scratchpad if matching callsign
+      const activePilotCS = document.getElementById('pilot-callsign').value.toUpperCase().trim();
+      const myFlight = flights.find(fl => fl.callsign === activePilotCS);
+      if (myFlight) {
+        document.getElementById('pilot-dcl-screen').innerHTML = `
+          <div><strong>DCL UPLINK — ${myFlight.callsign} (${myFlight.aircraft})</strong></div>
+          <div style="margin-top:6px;">STATUS: <strong>${myFlight.status}</strong> | PUSHBACK: <strong>${myFlight.pushback}</strong></div>
+          <div>ROUTE: CLEARED TO <strong>${myFlight.destination}</strong> VIA <strong>${myFlight.sid}</strong> (${myFlight.departure_trans})</div>
+          <div>INITIAL CLIMB: <strong>${myFlight.altitude}</strong> | ASSIGNED SQUAWK: <strong>${myFlight.squawk}</strong></div>
+          <div style="margin-top:6px;color:#a7f3d0;">CONTACT VAAH GROUND 121.90 MHz FOR PUSHBACK & STARTUP.</div>
+        `;
+      }
+    }
+
+    function openClearanceModal(callsign) {
+      const f = currentFlights.find(item => item.callsign === callsign);
+      if (!f) return;
+      document.getElementById('edit-callsign').value = f.callsign;
+      document.getElementById('edit-callsign-display').value = `${f.callsign} (${f.dest_name || f.destination})`;
+      document.getElementById('edit-sid').value = f.sid.includes('BODAR') || f.sid.includes('LIGPI') ? f.sid : 'BODAR 1A';
+      document.getElementById('edit-alt').value = f.altitude;
+      document.getElementById('edit-squawk').value = f.squawk;
+      document.getElementById('edit-dep').value = f.departure_trans || 'DEPA 1A';
+      updateChartFromSID(document.getElementById('edit-sid').value);
+      document.getElementById('clearance-modal').classList.add('open');
+    }
+
+    function closeClearanceModal() {
+      document.getElementById('clearance-modal').classList.remove('open');
+    }
+
+    function transmitClearance(statusType) {
+      const payload = {
+        callsign: document.getElementById('edit-callsign').value,
+        sid: document.getElementById('edit-sid').value,
+        altitude: document.getElementById('edit-alt').value,
+        squawk: document.getElementById('edit-squawk').value,
+        departure_trans: document.getElementById('edit-dep').value,
+        status: statusType
+      };
+      socket.emit('controller_transmit_clearance', payload);
+      closeClearanceModal();
+    }
+
+    function approvePushback(callsign) {
+      socket.emit('controller_approve_pushback', { callsign });
+    }
+
+    function updateChartFromSID(sidName) {
+      document.getElementById('chart-proc-name').textContent = sidName;
+      document.getElementById('chart-footer-proc').textContent = sidName;
+      document.getElementById('svg-fix-label').textContent = sidName;
+    }
+
+    function zoomChart(factor) {
+      currentZoom = factor === 1.0 ? 1 : currentZoom * factor;
+      document.getElementById('vaah-svg').style.transform = `scale(${currentZoom})`;
+    }
+
+    // Pilot Window Actions
+    function pilotRequestClearance() {
+      const callsign = document.getElementById('pilot-callsign').value.toUpperCase().trim();
+      const aircraft = document.getElementById('pilot-aircraft').value.toUpperCase().trim();
+      const destRaw = document.getElementById('pilot-dest').value.trim();
+      const destination = destRaw.split(' ')[0].toUpperCase();
+      const altitude = document.getElementById('pilot-alt').value.toUpperCase().trim();
+
+      socket.emit('pilot_request_clearance', {
+        callsign, aircraft, origin: 'VAAH', destination, dest_name: destRaw, altitude
+      });
+    }
+
+    function pilotSendAction(action) {
+      const callsign = document.getElementById('pilot-callsign').value.toUpperCase().trim();
+      socket.emit('pilot_action', { callsign, action });
+    }
+
+    function submitManualFPL() {
+      const callsign = document.getElementById('manual-callsign').value;
+      const aircraft = document.getElementById('manual-acft').value;
+      const destination = document.getElementById('manual-dest').value;
+      socket.emit('pilot_request_clearance', {
+        callsign, aircraft, origin: 'VAAH', destination, dest_name: destination, altitude: 'FL120'
+      });
+      switchTab('strips', document.querySelector('.nav-item'));
+    }
+
+    // Load S3 Charts list
+    fetch('/api/charts').then(r => r.json()).then(data => {
+      document.getElementById('bucket-label').textContent = data.bucket;
+      const container = document.getElementById('s3-chart-cards');
+      container.innerHTML = data.charts.map(c => `
+        <div class="strip-card" style="display:flex;justify-content:space-between;align-items:center;">
+          <div>
+            <div class="strip-id">${c.title}</div>
+            <div style="font-size:11px;color:var(--text-muted);">S3 Object Key: <code>s3://${data.bucket}/${c.key}</code> | RWY ${c.rwy}</div>
+          </div>
+          <button class="btn btn-blue" onclick="updateChartFromSID('${c.procedure}')">Load in Chart Viewer</button>
+        </div>
+      `).join('');
+    });
+
+    // Socket Listeners
+    socket.on('flights_init', renderFlights);
+    socket.on('flights_update', renderFlights);
+    socket.on('cloud_logs_init', logs => {
+      const box = document.getElementById('cloud-logs-box');
+      box.innerHTML = logs.map(l => `<div><span style="color:#63b3ed">[${l.timestamp}]</span> <strong style="color:#68d391">[${l.service}]</strong> ${l.message}</div>`).join('');
+    });
+    socket.on('cloud_log', l => {
+      const box = document.getElementById('cloud-logs-box');
+      box.innerHTML = `<div><span style="color:#63b3ed">[${l.timestamp}]</span> <strong style="color:#68d391">[${l.service}]</strong> ${l.message}</div>` + box.innerHTML;
+    });
+  </script>
+</body>
+</html>

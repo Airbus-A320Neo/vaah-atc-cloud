@@ -1,0 +1,36 @@
+name: VAAH ATC Docker CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  ci-docker-build:
+    name: 1. CI - Verify Docker Build & Syntax
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Build Docker Image for Verification
+        run: docker build -t vaah-atc-test:latest .
+
+      - name: Test Container Syntax
+        run: docker run --rm vaah-atc-test:latest node --check server.js
+
+  cd-deploy-ec2:
+    name: 2. CD - Deploy Container to AWS EC2
+    needs: ci-docker-build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Docker Compose Rebuild on EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_PUBLIC_IP }}
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd ~/vaah-atc-cloud
+            git pull origin main
+            docker compose up -d --build
+            docker image prune -f
